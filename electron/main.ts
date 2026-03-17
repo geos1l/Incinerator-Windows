@@ -113,14 +113,15 @@ function updateFireState() {
 
 app.whenReady().then(() => {
   createWidgetWindow();
-  createMainWindow();
 
   ipcMain.on(IPC.WIDGET_CLICKED, () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createMainWindow();
     }
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
   });
 
   ipcMain.on(IPC.FILES_DROPPED, (_event, filePaths: string[]) => {
@@ -253,7 +254,9 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on(IPC.WINDOW_CLOSE, () => {
-    mainWindow?.hide();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.close();
+    }
   });
 
   setTimeout(updateFireState, 2000);
