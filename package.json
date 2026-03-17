@@ -1,0 +1,44 @@
+{
+  "name": "incinerator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/main.js",
+  "scripts": {
+    "build:main": "webpack --config webpack.main.config.js",
+    "build:preload": "webpack --config webpack.preload.config.js",
+    "build:renderer": "webpack --config webpack.renderer.config.js",
+    "start": "node scripts/dev.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "electron": "^41.0.2",
+    "framer-motion": "^12.37.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.1",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "concurrently": "^9.2.1",
+    "copy-webpack-plugin": "^14.0.0",
+    "css-loader": "^7.1.4",
+    "file-loader": "^6.2.0",
+    "html-webpack-plugin": "^5.6.6",
+    "postcss": "^8.5.8",
+    "postcss-loader": "^8.2.1",
+    "style-loader": "^4.0.0",
+    "tailwindcss": "^4.2.1",
+    "ts-loader": "^9.5.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "wait-on": "^9.0.4",
+    "webpack": "^5.105.4",
+    "webpack-cli": "^7.0.1",
+    "webpack-dev-server": "^5.2.3"
+  }
+}
