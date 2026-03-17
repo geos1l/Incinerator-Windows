@@ -3,7 +3,7 @@ import { FireState } from '../shared/types';
 
 interface FireAnimationProps {
   state: FireState;
-  size?: 'widget' | 'main';
+  size?: 'mini' | 'widget' | 'main';
 }
 
 const FRAME_INTERVAL = 120;
@@ -40,7 +40,7 @@ export default function FireAnimation({ state, size = 'widget' }: FireAnimationP
     };
   }, [state]);
 
-  const dimension = size === 'widget' ? 100 : 300;
+  const dimension = size === 'mini' ? 44 : size === 'widget' ? 100 : 300;
   const frames = FIREPIT_FRAMES[state];
   const currentFrame = frames[frameIndex];
 
@@ -48,11 +48,13 @@ export default function FireAnimation({ state, size = 'widget' }: FireAnimationP
     <img
       src={currentFrame}
       alt={`fire-${state}`}
+      draggable={false}
       style={{
         width: dimension,
         height: dimension,
         imageRendering: 'pixelated',
         objectFit: 'contain',
+        pointerEvents: 'none',
       }}
     />
   );

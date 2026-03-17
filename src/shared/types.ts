@@ -8,6 +8,7 @@ export interface FileRecord {
   lastOpenedAt: number;
   deletionScore: number;
   isScheduled: boolean;
+  scheduledAt?: number;
   daysUntilAutoDelete?: number;
   thumbnailDataUrl?: string;
 }

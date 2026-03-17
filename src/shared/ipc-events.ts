@@ -5,8 +5,13 @@ export const IPC = {
   GET_ALL_FILES: 'files:get-all',
   PERMANENT_DELETE: 'files:permanent-delete',
   SCHEDULE_DELETE: 'files:schedule-delete',
+  RESTORE_FILE: 'files:restore',
   FIRE_STATE_UPDATE: 'widget:fire-state',
   GET_RECYCLE_BIN_SIZE: 'recycle:get-size',
+  GET_DISK_USAGE: 'disk:get-usage',
+  WIDGET_RESIZE: 'widget:resize',
+  WIDGET_START_DRAG: 'widget:start-drag',
+  WIDGET_STOP_DRAG: 'widget:stop-drag',
   WINDOW_MINIMIZE: 'window:minimize',
   WINDOW_CLOSE: 'window:close',
 } as const;

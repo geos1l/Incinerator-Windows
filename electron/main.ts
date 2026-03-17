@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { IPC } from '../src/shared/ipc-events';
-import { moveToRecycleBin, permanentDelete, getRecycleBinFiles, getRecycleBinSizeMB } from './recycle';
+import { moveToRecycleBin, permanentDelete, restoreFromRecycleBin, getRecycleBinFiles, getRecycleBinSizeMB } from './recycle';
 import { scanFiles } from './file-scanner';
 import { getFireState } from '../src/shared/ranking';
 
@@ -30,15 +30,18 @@ function saveConfig(data: Record<string, any>) {
   } catch { /* ignore */ }
 }
 
+const WIDGET_IDLE_SIZE = 56;
+const WIDGET_EXPANDED_SIZE = 120;
+
 function createWidgetWindow() {
   const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
   const config = loadConfig();
-  const defaultX = screenW - 144;
-  const defaultY = screenH - 144;
+  const defaultX = screenW - WIDGET_IDLE_SIZE - 24;
+  const defaultY = screenH - WIDGET_IDLE_SIZE - 24;
 
   widgetWindow = new BrowserWindow({
-    width: 120,
-    height: 120,
+    width: WIDGET_IDLE_SIZE,
+    height: WIDGET_IDLE_SIZE,
     x: config.widgetX ?? defaultX,
     y: config.widgetY ?? defaultY,
     frame: false,
@@ -163,8 +166,86 @@ app.whenReady().then(() => {
     }
   });
 
+  ipcMain.handle(IPC.RESTORE_FILE, (_event, fileName: string) => {
+    try {
+      restoreFromRecycleBin(fileName);
+      updateFireState();
+      return { success: true };
+    } catch (err) {
+      console.error(`Failed to restore ${fileName}:`, err);
+      return { success: false, error: String(err) };
+    }
+  });
+
   ipcMain.handle(IPC.GET_RECYCLE_BIN_SIZE, () => {
     return getRecycleBinSizeMB();
+  });
+
+  ipcMain.handle(IPC.GET_DISK_USAGE, () => {
+    try {
+      const driveLetter = (process.env.SystemDrive || 'C:').replace(':', '');
+      const output = require('child_process').execSync(
+        `powershell -Command "(Get-PSDrive ${driveLetter} | Select-Object Used, Free | ConvertTo-Json)"`,
+        { encoding: 'utf-8', timeout: 10000 }
+      ).trim();
+      const info = JSON.parse(output);
+      const usedGB = (info.Used || 0) / (1024 ** 3);
+      const freeGB = (info.Free || 0) / (1024 ** 3);
+      const totalGB = usedGB + freeGB;
+      return { usedGB, freeGB, totalGB, drive: `${driveLetter}:` };
+    } catch (err) {
+      console.error('Failed to get disk usage:', err);
+      return { usedGB: 0, freeGB: 0, totalGB: 0, drive: 'C:' };
+    }
+  });
+
+  let dragInterval: ReturnType<typeof setInterval> | null = null;
+  let dragOffset = { x: 0, y: 0 };
+  let dragMoved = false;
+
+  ipcMain.on(IPC.WIDGET_START_DRAG, () => {
+    if (!widgetWindow || dragInterval) return;
+    const cursor = screen.getCursorScreenPoint();
+    const [wx, wy] = widgetWindow.getPosition();
+    dragOffset = { x: cursor.x - wx, y: cursor.y - wy };
+    dragMoved = false;
+
+    dragInterval = setInterval(() => {
+      if (!widgetWindow) { clearInterval(dragInterval!); dragInterval = null; return; }
+      const cur = screen.getCursorScreenPoint();
+      const newX = cur.x - dragOffset.x;
+      const newY = cur.y - dragOffset.y;
+      const [ox, oy] = widgetWindow.getPosition();
+      if (newX !== ox || newY !== oy) {
+        dragMoved = true;
+        widgetWindow.setPosition(newX, newY);
+      }
+    }, 8);
+  });
+
+  ipcMain.handle(IPC.WIDGET_STOP_DRAG, () => {
+    if (dragInterval) { clearInterval(dragInterval); dragInterval = null; }
+    if (widgetWindow) {
+      const [x, y] = widgetWindow.getPosition();
+      saveConfig({ widgetX: x, widgetY: y });
+    }
+    const wasDrag = dragMoved;
+    dragMoved = false;
+    return wasDrag;
+  });
+
+  ipcMain.on(IPC.WIDGET_RESIZE, (_event, expanded: boolean) => {
+    if (!widgetWindow) return;
+    const [x, y] = widgetWindow.getPosition();
+    const size = expanded ? WIDGET_EXPANDED_SIZE : WIDGET_IDLE_SIZE;
+    const currentSize = widgetWindow.getSize()[0];
+    const offset = Math.round((currentSize - size) / 2);
+    widgetWindow.setBounds({
+      x: x + offset,
+      y: y + offset,
+      width: size,
+      height: size,
+    });
   });
 
   ipcMain.on(IPC.WINDOW_MINIMIZE, () => {

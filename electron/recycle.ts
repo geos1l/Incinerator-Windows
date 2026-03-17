@@ -32,6 +32,23 @@ Add-Type -AssemblyName Microsoft.VisualBasic
   console.log('[recycle] Done:', filePath);
 }
 
+export function restoreFromRecycleBin(itemName: string): void {
+  const script = `
+$shell = New-Object -ComObject Shell.Application
+$bin = $shell.Namespace(10)
+$item = $bin.Items() | Where-Object { $_.Name -eq '${itemName.replace(/'/g, "''")}' } | Select-Object -First 1
+if ($item) {
+  $item.InvokeVerb('undelete')
+  Write-Output 'restored'
+} else {
+  Write-Output 'not_found'
+}
+`;
+  console.log('[recycle] Restoring from Recycle Bin:', itemName);
+  const result = runPowerShell(script);
+  console.log('[recycle] Restore result:', result);
+}
+
 export function permanentDelete(filePath: string): void {
   const script = `Remove-Item -LiteralPath '${filePath.replace(/'/g, "''")}' -Force -Recurse`;
   console.log('[recycle] Permanently deleting:', filePath);
@@ -86,6 +103,7 @@ else { $result | ConvertTo-Json -Compress }
         createdAt: deletedDate,
         lastOpenedAt: deletedDate,
         isScheduled: true,
+        scheduledAt: deletedDate,
         daysUntilAutoDelete,
       };
 

@@ -7,6 +7,8 @@ interface CardGridProps {
   files: FileRecord[];
   loading: boolean;
   onFileDrop: (file: FileRecord, cardRect: DOMRect) => void;
+  onUnschedule?: (file: FileRecord) => void;
+  duplicateIds?: Set<string>;
   activeTab: 'all' | 'scheduled';
 }
 
@@ -16,38 +18,27 @@ function SkeletonCard() {
       style={{
         background: 'var(--bg-surface)',
         border: '1px solid var(--border-subtle)',
-        borderRadius: 8,
-        padding: '12px 14px',
-        height: 68,
+        borderRadius: 10,
+        width: 170,
+        height: 240,
         animation: 'pulse 1.5s ease-in-out infinite',
       }}
     >
-      <div
-        style={{
-          width: '60%',
-          height: 14,
-          background: 'var(--bg-elevated)',
-          borderRadius: 4,
-          marginBottom: 10,
-        }}
-      />
-      <div
-        style={{
-          width: '40%',
-          height: 10,
-          background: 'var(--bg-elevated)',
-          borderRadius: 4,
-        }}
-      />
+      <div style={{ padding: 10 }}>
+        <div style={{ width: '70%', height: 12, background: 'var(--bg-elevated)', borderRadius: 4, marginBottom: 8 }} />
+        <div style={{ width: '100%', height: 100, background: 'var(--bg-elevated)', borderRadius: 6, marginBottom: 8 }} />
+        <div style={{ width: '50%', height: 10, background: 'var(--bg-elevated)', borderRadius: 4, marginBottom: 6 }} />
+        <div style={{ width: '80%', height: 10, background: 'var(--bg-elevated)', borderRadius: 4 }} />
+      </div>
     </div>
   );
 }
 
-export default function CardGrid({ files, loading, onFileDrop, activeTab }: CardGridProps) {
+export default function CardGrid({ files, loading, onFileDrop, onUnschedule, duplicateIds, activeTab }: CardGridProps) {
   if (loading) {
     return (
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
           {Array.from({ length: 8 }).map((_, i) => (
             <SkeletonCard key={i} />
           ))}
@@ -95,7 +86,7 @@ export default function CardGrid({ files, loading, onFileDrop, activeTab }: Card
 
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
         <AnimatePresence mode="popLayout">
           {files.map((file, index) => (
             <FileCard
@@ -103,6 +94,8 @@ export default function CardGrid({ files, loading, onFileDrop, activeTab }: Card
               file={file}
               index={index}
               onDragToFirepit={onFileDrop}
+              onUnschedule={onUnschedule}
+              isDuplicate={duplicateIds?.has(file.id)}
             />
           ))}
         </AnimatePresence>
