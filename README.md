@@ -40,17 +40,9 @@ npm run dist
 
 Installer output goes to the `installer-output*/` folder.
 
-## Releases & auto-updates
+## How to install
 
-This project uses `electron-updater` + GitHub Releases.
-
-- **Tag format**: `vX.Y.Z` (example: `v1.0.0`)
-- Upload these assets to the Release:
-  - `Incinerator Setup X.Y.Z.exe`
-  - `latest.yml`
-  - `Incinerator Setup X.Y.Z.exe.blockmap`
-
-Auto-update only triggers when a user has an older version installed (for example, `1.0.0` → `1.0.1`).
+Go to the github releases link on the right in this repo
 
 ## Project structure
 
