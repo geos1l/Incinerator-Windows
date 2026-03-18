@@ -6,9 +6,10 @@ import { FireState } from '../shared/types';
 interface FirepitProps {
   fireState: FireState;
   onRectUpdate: (rect: DOMRect) => void;
+  isScheduledTab: boolean;
 }
 
-export default function Firepit({ fireState, onRectUpdate }: FirepitProps) {
+export default function Firepit({ fireState, onRectUpdate, isScheduledTab }: FirepitProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
 
@@ -78,7 +79,11 @@ export default function Firepit({ fireState, onRectUpdate }: FirepitProps) {
           transition: 'color 0.2s',
         }}
       >
-        {isHovered ? 'Release to incinerate' : 'Drag files here'}
+        {isHovered
+          ? isScheduledTab
+            ? 'Release to incinerate (permanent delete)'
+            : 'Release to feed the fire'
+          : 'Drag files here'}
       </p>
 
       <p
@@ -89,7 +94,7 @@ export default function Firepit({ fireState, onRectUpdate }: FirepitProps) {
           opacity: 0.6,
         }}
       >
-        Drag cards from the left panel →
+        ← Drag cards from the left panel
       </p>
     </motion.div>
   );

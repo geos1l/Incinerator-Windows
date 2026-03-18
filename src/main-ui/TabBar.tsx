@@ -39,7 +39,7 @@ export default function TabBar({ activeTab, onTabChange, scheduledCount }: TabBa
         All Files
       </button>
       <button style={tabStyle(activeTab === 'scheduled')} onClick={() => onTabChange('scheduled')}>
-        Scheduled
+        Firepit
         {scheduledCount > 0 && (
           <span
             style={{

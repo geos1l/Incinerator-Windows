@@ -37,7 +37,7 @@ export default function DiskBar() {
 
   return (
     <div style={{
-      padding: '6px 16px 8px',
+      padding: '4px 16px 6px',
       flexShrink: 0,
       background: 'var(--bg-base)',
       borderBottom: '1px solid var(--border-subtle)',
@@ -69,8 +69,8 @@ export default function DiskBar() {
 
       <div style={{
         width: '100%',
-        height: 14,
-        borderRadius: 7,
+        height: 12,
+        borderRadius: 6,
         background: 'var(--bg-elevated)',
         border: '1px solid var(--border-subtle)',
         overflow: 'hidden',

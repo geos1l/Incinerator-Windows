@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import TitleBar from './TitleBar';
+import RoastPanel, { SpaceStats } from './RoastPanel';
 import TabBar from './TabBar';
 import FilterBar, { FileFilter, FILTER_EXTENSIONS, SortMode } from './FilterBar';
 import DiskBar from './DiskBar';
@@ -22,6 +23,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('all');
   const [fireState, setFireState] = useState<FireState>('ember');
   const [loading, setLoading] = useState(true);
+  const [roastSeed, setRoastSeed] = useState(0);
   const [burnAnim, setBurnAnim] = useState<BurnAnimation | null>(null);
   const [firepitRect, setFirepitRect] = useState<DOMRect | null>(null);
   const [activeFilter, setActiveFilter] = useState<FileFilter>('all');
@@ -135,6 +137,79 @@ export default function App() {
     return result;
   }, [tabFiles, activeFilter, duplicateSet, sortMode]);
 
+  const spaceStats: SpaceStats | null = useMemo(() => {
+    if (files.length === 0) return null;
+    let totalMB = 0;
+    let videosMB = 0;
+    let photosMB = 0;
+    let appsMB = 0;
+    let docsMB = 0;
+    let archivesMB = 0;
+    let audioMB = 0;
+    let installersMB = 0;
+    let installersCount = 0;
+    let neverOpenedCount = 0;
+    let scheduledCountAll = 0;
+    let highScoreCount = 0;
+
+    const imageExts = new Set(FILTER_EXTENSIONS.images);
+    const videoExts = new Set(FILTER_EXTENSIONS.videos);
+    const audioExts = new Set(FILTER_EXTENSIONS.audio);
+    const docsExts = new Set(FILTER_EXTENSIONS.documents);
+    const archivesExts = new Set(FILTER_EXTENSIONS.archives);
+    const codeExts = new Set(FILTER_EXTENSIONS.code);
+    const appsExts = new Set(FILTER_EXTENSIONS.apps);
+
+    const installerExts = new Set(['.exe', '.msi', '.app', '.dmg', '.pkg', '.deb', '.rpm']);
+
+    for (const f of files) {
+      totalMB += f.sizeMB;
+      const ext = f.extension.toLowerCase();
+      if (videoExts.has(ext)) videosMB += f.sizeMB;
+      else if (imageExts.has(ext)) photosMB += f.sizeMB;
+      else if (appsExts.has(ext)) appsMB += f.sizeMB;
+      else if (docsExts.has(ext)) docsMB += f.sizeMB;
+      else if (archivesExts.has(ext)) archivesMB += f.sizeMB;
+      else if (audioExts.has(ext)) audioMB += f.sizeMB;
+
+      if (installerExts.has(ext) || /setup|installer|install/i.test(f.name)) {
+        installersMB += f.sizeMB;
+        installersCount += 1;
+      }
+
+      if (f.isScheduled) scheduledCountAll += 1;
+      if (f.deletionScore >= 85) highScoreCount += 1;
+      if (Math.abs(f.lastOpenedAt - f.createdAt) < 60_000) {
+        neverOpenedCount += 1;
+      }
+    }
+
+    // Very simple duplicate estimate: reuse duplicateSet when on "all" tab, else ignore.
+    const duplicatesCount =
+      activeTab === 'all' ? duplicateSet.size : 0;
+
+    const totalGB = totalMB / 1024;
+    return {
+      totalGB,
+      fileCount: files.length,
+      videosGB: videosMB / 1024,
+      photosGB: photosMB / 1024,
+      appsGB: appsMB / 1024,
+      docsGB: docsMB / 1024,
+      archivesGB: archivesMB / 1024,
+      audioGB: audioMB / 1024,
+      otherGB:
+        totalGB -
+        (videosMB + photosMB + appsMB + docsMB + archivesMB + audioMB) / 1024,
+      installersGB: installersMB / 1024,
+      installersCount,
+      duplicatesCount,
+      neverOpenedCount,
+      scheduledCount: scheduledCountAll,
+      highScoreCount,
+    };
+  }, [files, activeTab, duplicateSet]);
+
   const handleFileDrop = useCallback(async (file: FileRecord, cardRect: DOMRect | null) => {
     const animType = file.isScheduled ? 'incinerate' : 'schedule';
     setBurnAnim({ file, type: animType, startRect: cardRect });
@@ -168,6 +243,10 @@ export default function App() {
     setBurnAnim(null);
   }, []);
 
+  const handleRoastAgain = useCallback(() => {
+    setRoastSeed((prev) => prev + 1);
+  }, []);
+
   return (
     <div style={{
       width: '100%',
@@ -193,17 +272,34 @@ export default function App() {
       />
       <DiskBar />
       <Layout>
-        <CardGrid
-          files={displayedFiles}
-          loading={loading}
-          onFileDrop={handleFileDrop}
-          onUnschedule={handleUnschedule}
-          duplicateIds={duplicateSet}
-          activeTab={activeTab}
-        />
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            overflow: 'hidden',
+          }}
+        >
+          <RoastPanel
+            stats={spaceStats}
+            roastSeed={roastSeed}
+            onRoastAgain={handleRoastAgain}
+          />
+          <CardGrid
+            files={displayedFiles}
+            loading={loading}
+            onFileDrop={handleFileDrop}
+            onUnschedule={handleUnschedule}
+            duplicateIds={duplicateSet}
+            activeTab={activeTab}
+          />
+        </div>
         <Firepit
           fireState={fireState}
           onRectUpdate={setFirepitRect}
+          isScheduledTab={activeTab === 'scheduled'}
         />
       </Layout>
       {burnAnim && (

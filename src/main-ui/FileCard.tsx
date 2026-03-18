@@ -1,5 +1,6 @@
-import React, { useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import { FileRecord } from '../shared/types';
 
 interface FileCardProps {
@@ -65,6 +66,21 @@ function getParentFolder(filePath: string): string {
 
 export default function FileCard({ file, index, onDragToFirepit, onUnschedule, isDuplicate }: FileCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const [dragGhost, setDragGhost] = useState<null | { x: number; y: number; w: number; h: number }>(null);
+
+  const cardStyle: React.CSSProperties = useMemo(() => ({
+    position: 'relative',
+    width: 170,
+    background: file.isScheduled ? 'var(--scheduled-tint)' : 'var(--bg-surface)',
+    border: `2px solid ${file.isScheduled ? '#3d2a0a' : 'var(--border-subtle)'}`,
+    borderRadius: 12,
+    padding: 0,
+    cursor: 'grab',
+    overflow: 'hidden',
+    userSelect: 'none',
+    display: 'flex',
+    flexDirection: 'column',
+  }), [file.isScheduled]);
 
   return (
     <motion.div
@@ -74,7 +90,16 @@ export default function FileCard({ file, index, onDragToFirepit, onUnschedule, i
       dragSnapToOrigin
       whileHover={{ y: -3, boxShadow: `0 0 16px ${scoreToColor(file.deletionScore)}66` }}
       whileDrag={{ rotate: 3, scale: 1.05, zIndex: 50 }}
+      onDragStart={(_event, info) => {
+        if (!cardRef.current) return;
+        const rect = cardRef.current.getBoundingClientRect();
+        setDragGhost({ x: info.point.x, y: info.point.y, w: rect.width, h: rect.height });
+      }}
+      onDrag={(_event, info) => {
+        setDragGhost((prev) => prev ? { ...prev, x: info.point.x, y: info.point.y } : prev);
+      }}
       onDragEnd={(_event, info) => {
+        setDragGhost(null);
         if (cardRef.current) {
           const cardRect = cardRef.current.getBoundingClientRect();
           const cardCenterX = cardRect.left + cardRect.width / 2 + info.offset.x;
@@ -87,19 +112,149 @@ export default function FileCard({ file, index, onDragToFirepit, onUnschedule, i
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.03, duration: 0.3 }}
       style={{
-        position: 'relative',
-        width: 170,
-        background: file.isScheduled ? 'var(--scheduled-tint)' : 'var(--bg-surface)',
-        border: `2px solid ${file.isScheduled ? '#3d2a0a' : 'var(--border-subtle)'}`,
-        borderRadius: 12,
-        padding: 0,
-        cursor: 'grab',
-        overflow: 'hidden',
-        userSelect: 'none',
-        display: 'flex',
-        flexDirection: 'column',
+        ...cardStyle,
+        // Hide the original completely while dragging so you only ever see ONE card.
+        visibility: dragGhost ? 'hidden' : 'visible',
       }}
     >
+      {dragGhost && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: dragGhost.x - dragGhost.w / 2,
+            top: dragGhost.y - dragGhost.h / 2,
+            width: dragGhost.w,
+            height: dragGhost.h,
+            zIndex: 200000,
+            pointerEvents: 'none',
+          }}
+        >
+          <div style={{ ...cardStyle, width: dragGhost.w, height: dragGhost.h, boxShadow: `0 0 22px ${scoreToColor(file.deletionScore)}66` }}>
+            {/* === TOP BAR: Name + Size (HP style) === */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '6px 10px',
+              borderBottom: '1px solid var(--border-subtle)',
+              background: 'var(--bg-elevated)',
+              minHeight: 30,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 13, flexShrink: 0 }}>{getFileIcon(file.extension)}</span>
+                <span style={{
+                  fontFamily: "'Chakra Petch', sans-serif",
+                  fontWeight: 700,
+                  fontSize: 11,
+                  color: 'var(--text-primary)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }} title={file.name}>
+                  {file.name}
+                </span>
+              </div>
+              <span style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 11,
+                fontWeight: 700,
+                color: scoreToColor(file.deletionScore),
+                flexShrink: 0,
+                marginLeft: 4,
+              }}>
+                {formatSize(file.sizeMB)}
+              </span>
+            </div>
+
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              position: 'relative',
+              minHeight: 90,
+              margin: '6px 8px',
+              borderRadius: 6,
+              background: 'var(--bg-base)',
+              border: '1px solid var(--border-subtle)',
+            }}>
+              <span style={{ fontSize: 44, opacity: 0.45 }}>{getFileIcon(file.extension)}</span>
+              {file.daysUntilAutoDelete !== undefined && file.isScheduled && (
+                <span style={{
+                  position: 'absolute',
+                  bottom: 4,
+                  right: 6,
+                  fontSize: 8,
+                  color: 'var(--text-danger)',
+                  fontFamily: "'JetBrains Mono', monospace",
+                  opacity: 0.8,
+                }}>
+                  {file.daysUntilAutoDelete}d left
+                </span>
+              )}
+              {isDuplicate && (
+                <span
+                  title={file.path}
+                  style={{
+                    position: 'absolute',
+                    bottom: 4,
+                    left: 6,
+                    right: 6,
+                    fontSize: 8,
+                    color: 'var(--text-secondary)',
+                    fontFamily: "'JetBrains Mono', monospace",
+                    opacity: 0.6,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    textAlign: 'center',
+                  }}
+                >
+                  {getParentFolder(file.path)}/
+                </span>
+              )}
+            </div>
+
+            <div style={{
+              padding: '6px 10px 8px',
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 9,
+              color: 'var(--text-secondary)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: 8 }}>Opened</span>
+                <span>{formatRelative(file.lastOpenedAt)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: 8 }}>Created</span>
+                <span>{formatDate(file.createdAt)}</span>
+              </div>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                borderTop: '1px solid var(--border-subtle)',
+                paddingTop: 4,
+              }}>
+                <span style={{ opacity: 0.5, textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: 8 }}>Score</span>
+                <span style={{ color: scoreToColor(file.deletionScore), fontWeight: 700, fontSize: 11 }}>
+                  {file.deletionScore}
+                </span>
+              </div>
+            </div>
+
+            <div style={{
+              height: 3,
+              background: scoreToColor(file.deletionScore),
+              borderRadius: '0 0 10px 10px',
+            }} />
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* === TOP BAR: Name + Size (HP style) === */}
       <div style={{
         display: 'flex',

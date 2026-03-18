@@ -35,9 +35,21 @@ function SkeletonCard() {
 }
 
 export default function CardGrid({ files, loading, onFileDrop, onUnschedule, duplicateIds, activeTab }: CardGridProps) {
+  const gridViewportStyle: React.CSSProperties = {
+    flex: 1,
+    minHeight: 0,
+    overflow: 'auto',
+    // Right side also includes scrollbar width, so keep right padding smaller
+    // to visually match the left gutter.
+    paddingTop: 10,
+    paddingBottom: 10,
+    paddingLeft: 10,
+    paddingRight: 2,
+  };
+
   if (loading) {
     return (
-      <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+      <div style={gridViewportStyle}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
           {Array.from({ length: 8 }).map((_, i) => (
             <SkeletonCard key={i} />
@@ -55,7 +67,7 @@ export default function CardGrid({ files, loading, onFileDrop, onUnschedule, dup
 
   if (files.length === 0) {
     const message = activeTab === 'scheduled'
-      ? 'Nothing scheduled. Your pit is cold.'
+      ? 'Nothing in the firepit. Your pit is cold.'
       : 'Nothing worth burning.';
 
     return (
@@ -84,8 +96,8 @@ export default function CardGrid({ files, loading, onFileDrop, onUnschedule, dup
     );
   }
 
-  return (
-    <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+    return (
+    <div style={gridViewportStyle}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
         <AnimatePresence mode="popLayout">
           {files.map((file, index) => (
