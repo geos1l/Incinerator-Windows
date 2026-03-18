@@ -2,7 +2,7 @@
 
 Incinerate the clutter. **Incinerator** is a desktop app that makes cleanup feel like feeding a firepit. This is the windows version. If you're a mac user check out this repo https://github.com/muhibwqr/incinerator
 
-## Install (for normal people)
+## Install
 
 1. Download the latest installer from **Releases**.
 2. Run `Incinerator Setup X.Y.Z.exe`.
@@ -39,10 +39,6 @@ npm run dist
 ```
 
 Installer output goes to the `installer-output*/` folder.
-
-## How to install
-
-Go to the github releases link on the right in this repo
 
 ## Project structure
 
