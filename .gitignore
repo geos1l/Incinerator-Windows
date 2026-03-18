@@ -10,6 +10,10 @@ Desktop.ini
 
 # Electron
 out/
+release/
+release_old/
+installer-output/
+installer-output*/
 
 # Temp files
 *.ps1.tmp

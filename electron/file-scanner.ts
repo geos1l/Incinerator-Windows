@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { FileRecord } from '../src/shared/types';
 import { computeScore } from '../src/shared/ranking';
@@ -6,11 +7,15 @@ import { computeScore } from '../src/shared/ranking';
 const MAX_FILES = 2000;
 const SCAN_DIRS = ['Desktop', 'Downloads', 'Documents', 'Pictures', 'Videos'];
 
-function walkDir(dir: string, results: string[], limit: number): void {
+let cachedResults: FileRecord[] | null = null;
+let cacheTime = 0;
+const CACHE_TTL_MS = 60_000;
+
+async function walkDir(dir: string, results: string[], limit: number): Promise<void> {
   if (results.length >= limit) return;
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries = await fsp.readdir(dir, { withFileTypes: true });
   } catch {
     return;
   }
@@ -19,21 +24,28 @@ function walkDir(dir: string, results: string[], limit: number): void {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-      walkDir(fullPath, results, limit);
+      await walkDir(fullPath, results, limit);
     } else if (entry.isFile()) {
       results.push(fullPath);
     }
   }
 }
 
-export function scanFiles(): FileRecord[] {
+export async function scanFiles(bustCache = false): Promise<FileRecord[]> {
+  if (!bustCache && cachedResults && (Date.now() - cacheTime < CACHE_TTL_MS)) {
+    return cachedResults;
+  }
+
   const userProfile = process.env.USERPROFILE || process.env.HOME || '';
   const filePaths: string[] = [];
 
   for (const dirName of SCAN_DIRS) {
     const dirPath = path.join(userProfile, dirName);
-    if (fs.existsSync(dirPath)) {
-      walkDir(dirPath, filePaths, MAX_FILES);
+    try {
+      await fsp.access(dirPath);
+      await walkDir(dirPath, filePaths, MAX_FILES);
+    } catch {
+      continue;
     }
     if (filePaths.length >= MAX_FILES) break;
   }
@@ -41,7 +53,7 @@ export function scanFiles(): FileRecord[] {
   const records: FileRecord[] = [];
   for (const filePath of filePaths) {
     try {
-      const stat = fs.statSync(filePath);
+      const stat = await fsp.stat(filePath);
       if (!stat.isFile()) continue;
 
       const ext = path.extname(filePath).toLowerCase();
@@ -69,5 +81,7 @@ export function scanFiles(): FileRecord[] {
   }
 
   records.sort((a, b) => b.deletionScore - a.deletionScore);
+  cachedResults = records;
+  cacheTime = Date.now();
   return records;
 }

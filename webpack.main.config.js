@@ -1,7 +1,9 @@
 const path = require('path');
 
+const isProd = process.env.NODE_ENV === 'production';
+
 module.exports = {
-  mode: 'development',
+  mode: isProd ? 'production' : 'development',
   target: 'electron-main',
   entry: './electron/main.ts',
   output: {
@@ -26,5 +28,7 @@ module.exports = {
   },
   externals: {
     'electron-store': 'commonjs electron-store',
+    'electron-updater': 'commonjs electron-updater',
   },
+  devtool: isProd ? false : 'source-map',
 };

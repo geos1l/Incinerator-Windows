@@ -1,7 +1,9 @@
 const path = require('path');
 
+const isProd = process.env.NODE_ENV === 'production';
+
 module.exports = {
-  mode: 'development',
+  mode: isProd ? 'production' : 'development',
   target: 'electron-preload',
   entry: './electron/preload.ts',
   output: {
@@ -20,4 +22,5 @@ module.exports = {
       },
     ],
   },
+  devtool: isProd ? false : 'source-map',
 };

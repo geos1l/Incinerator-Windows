@@ -1,21 +1,67 @@
 {
   "name": "incinerator",
   "version": "1.0.0",
-  "description": "",
+  "description": "Burn the clutter. A smart file cleanup tool for Windows.",
   "main": "dist/main.js",
+  "author": "Incinerator Team",
+  "license": "ISC",
+  "type": "commonjs",
   "scripts": {
     "build:main": "webpack --config webpack.main.config.js",
     "build:preload": "webpack --config webpack.preload.config.js",
     "build:renderer": "webpack --config webpack.renderer.config.js",
-    "start": "node scripts/dev.js"
+    "start": "node scripts/dev.js",
+    "build:prod:main": "cross-env NODE_ENV=production webpack --config webpack.main.config.js",
+    "build:prod:preload": "cross-env NODE_ENV=production webpack --config webpack.preload.config.js",
+    "build:prod:renderer": "cross-env NODE_ENV=production webpack --config webpack.renderer.config.js",
+    "build:prod": "npm run build:prod:main && npm run build:prod:preload && npm run build:prod:renderer",
+    "dist": "npm run build:prod && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "build": {
+    "appId": "com.incinerator.app",
+    "productName": "Incinerator",
+    "directories": {
+      "output": "installer-output-v2"
+    },
+    "files": [
+      "dist/**/*"
+    ],
+    "extraResources": [
+      { "from": "assets/icon.ico", "to": "icon.ico" }
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "geos1l",
+      "repo": "Incinerator-Windows"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "forceCodeSigning": false,
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Incinerator"
+    }
+  },
   "dependencies": {
-    "electron": "^41.0.2",
+    "@fontsource/chakra-petch": "^5.2.7",
+    "@fontsource/jetbrains-mono": "^5.2.8",
     "framer-motion": "^12.37.0",
+    "electron-updater": "^6.8.3",
+    "posthog-node": "^5.21.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
@@ -26,9 +72,13 @@
     "@types/react-dom": "^19.2.3",
     "concurrently": "^9.2.1",
     "copy-webpack-plugin": "^14.0.0",
+    "cross-env": "^7.0.3",
     "css-loader": "^7.1.4",
+    "electron": "^41.0.2",
+    "electron-builder": "^26.0.12",
     "file-loader": "^6.2.0",
     "html-webpack-plugin": "^5.6.6",
+    "png-to-ico": "^3.0.1",
     "postcss": "^8.5.8",
     "postcss-loader": "^8.2.1",
     "style-loader": "^4.0.0",

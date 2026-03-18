@@ -1,8 +1,11 @@
 const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
+
+const isProd = process.env.NODE_ENV === 'production';
+
 module.exports = {
-  mode: 'development',
+  mode: isProd ? 'production' : 'development',
   target: 'web',
   entry: {
     widget: './src/widget/index.tsx',
@@ -34,6 +37,10 @@ module.exports = {
         type: 'asset/resource',
       },
       {
+        test: /\.(woff|woff2|eot|ttf|otf)$/i,
+        type: 'asset/resource',
+      },
+      {
         test: /\.mjs$/,
         include: /node_modules/,
         type: 'javascript/auto',
@@ -57,6 +64,7 @@ module.exports = {
       ],
     }),
   ],
+  devtool: isProd ? false : 'source-map',
   devServer: {
     port: 9000,
     hot: true,

@@ -1,16 +1,30 @@
-import { app, BrowserWindow, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { IPC } from '../src/shared/ipc-events';
 import { moveToRecycleBin, permanentDelete, restoreFromRecycleBin, getRecycleBinFiles, getRecycleBinSizeMB } from './recycle';
 import { scanFiles } from './file-scanner';
 import { getFireState } from '../src/shared/ranking';
+import { initTelemetry, trackFileAction, shutdownTelemetry } from './telemetry';
+import { autoUpdater } from 'electron-updater';
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+}
 
 let widgetWindow: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
 
 const isDev = !app.isPackaged;
 const preloadPath = path.join(__dirname, 'preload.js');
+
+function assetPath(filename: string): string {
+  if (isDev) return path.join(__dirname, '..', 'assets', filename);
+  return path.join(process.resourcesPath, filename);
+}
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'incinerator-config.json');
 
@@ -51,6 +65,7 @@ function createWidgetWindow() {
     resizable: false,
     hasShadow: false,
     movable: true,
+    icon: assetPath('icon.ico'),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -81,6 +96,7 @@ function createMainWindow() {
     frame: false,
     show: false,
     backgroundColor: '#0e0e0e',
+    icon: assetPath('icon.ico'),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -97,21 +113,90 @@ function createMainWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-function updateFireState() {
+let lastFireState: string | null = null;
+let lastFireCheckTime = 0;
+const FIRE_CHECK_MIN_INTERVAL = 10_000;
+
+function updateFireState(force = false) {
   if (!widgetWindow) return;
+  if (!force && (Date.now() - lastFireCheckTime < FIRE_CHECK_MIN_INTERVAL)) return;
   try {
+    lastFireCheckTime = Date.now();
     const sizeMB = getRecycleBinSizeMB();
     const state = getFireState(sizeMB);
-    widgetWindow.webContents.send(IPC.FIRE_STATE_UPDATE, state);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(IPC.FIRE_STATE_UPDATE, state);
+    if (state !== lastFireState || force) {
+      lastFireState = state;
+      widgetWindow.webContents.send(IPC.FIRE_STATE_UPDATE, state);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IPC.FIRE_STATE_UPDATE, state);
+      }
     }
   } catch (err) {
     console.error('Error updating fire state:', err);
   }
 }
 
+app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createMainWindow();
+  }
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+app.on('before-quit', () => {
+  isQuitting = true;
+  shutdownTelemetry();
+});
+
 app.whenReady().then(() => {
+  if (!isDev) {
+    app.setLoginItemSettings({ openAtLogin: true });
+
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  }
+
+  initTelemetry();
+
+  const trayIcon = nativeImage.createFromPath(assetPath('icon.ico'));
+  tray = new Tray(trayIcon.isEmpty() ? nativeImage.createEmpty() : trayIcon);
+  tray.setToolTip('Incinerator');
+  const trayMenu = Menu.buildFromTemplate([
+    {
+      label: 'Open Incinerator',
+      click: () => {
+        if (!mainWindow || mainWindow.isDestroyed()) createMainWindow();
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+  tray.setContextMenu(trayMenu);
+  tray.on('double-click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) createMainWindow();
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
   createWidgetWindow();
 
   ipcMain.on(IPC.WIDGET_CLICKED, () => {
@@ -132,15 +217,15 @@ app.whenReady().then(() => {
         console.error(`Failed to recycle ${fp}:`, err);
       }
     }
-    updateFireState();
+    updateFireState(true);
   });
 
   ipcMain.handle(IPC.GET_RECYCLE_BIN, () => {
     return getRecycleBinFiles();
   });
 
-  ipcMain.handle(IPC.GET_ALL_FILES, () => {
-    const scanned = scanFiles();
+  ipcMain.handle(IPC.GET_ALL_FILES, async () => {
+    const scanned = await scanFiles();
     const recycled = getRecycleBinFiles();
     return [...scanned, ...recycled];
   });
@@ -148,7 +233,8 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC.PERMANENT_DELETE, (_event, filePath: string) => {
     try {
       permanentDelete(filePath);
-      updateFireState();
+      updateFireState(true);
+      trackFileAction('incinerated', 1);
       return { success: true };
     } catch (err) {
       console.error(`Failed to permanently delete ${filePath}:`, err);
@@ -159,7 +245,8 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC.SCHEDULE_DELETE, (_event, filePath: string) => {
     try {
       moveToRecycleBin(filePath);
-      updateFireState();
+      updateFireState(true);
+      trackFileAction('scheduled', 1);
       return { success: true };
     } catch (err) {
       console.error(`Failed to schedule delete ${filePath}:`, err);
@@ -170,7 +257,7 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC.RESTORE_FILE, (_event, fileName: string) => {
     try {
       restoreFromRecycleBin(fileName);
-      updateFireState();
+      updateFireState(true);
       return { success: true };
     } catch (err) {
       console.error(`Failed to restore ${fileName}:`, err);
@@ -259,10 +346,11 @@ app.whenReady().then(() => {
     }
   });
 
-  setTimeout(updateFireState, 2000);
-  setInterval(updateFireState, 30000);
+  setTimeout(() => updateFireState(true), 2000);
+  setInterval(() => updateFireState(), 30000);
 });
 
 app.on('window-all-closed', () => {
-  app.quit();
+  // Don't quit -- the widget stays alive in the background.
+  // Only quit if isQuitting is true (user triggered app quit).
 });
