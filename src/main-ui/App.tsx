@@ -19,7 +19,8 @@ interface BurnAnimation {
 }
 
 export default function App() {
-  const [files, setFiles] = useState<FileRecord[]>([]);
+  const [baseFiles, setBaseFiles] = useState<FileRecord[]>([]);
+  const [deepFiles, setDeepFiles] = useState<FileRecord[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>('all');
   const [fireState, setFireState] = useState<FireState>('ember');
   const [loading, setLoading] = useState(true);
@@ -28,17 +29,36 @@ export default function App() {
   const [firepitRect, setFirepitRect] = useState<DOMRect | null>(null);
   const [activeFilter, setActiveFilter] = useState<FileFilter>('all');
   const [sortMode, setSortMode] = useState<SortMode>('score');
+  const [isFiltering, setIsFiltering] = useState(false);
+  const [deepScanOpen, setDeepScanOpen] = useState(false);
+  const [deepScanRoots, setDeepScanRoots] = useState<string[] | null>(null);
+  const [deepScanMinSizeMB, setDeepScanMinSizeMB] = useState<number | null>(null);
+  const [deepScanId, setDeepScanId] = useState<string | null>(null);
+  const [deepScanProgress, setDeepScanProgress] = useState<{ scannedFiles: number; matchedFiles: number } | null>(null);
+  const [deepScanRunning, setDeepScanRunning] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   const loadFiles = useCallback(async () => {
     setLoading(true);
     try {
       const allFiles = await window.incinerator.getAllFiles();
-      setFiles(allFiles);
+      setBaseFiles(allFiles);
     } catch (err) {
       console.error('Failed to load files:', err);
     }
     setLoading(false);
   }, []);
+
+  const files = useMemo(() => {
+    if (deepFiles.length === 0) return baseFiles;
+    const byPath = new Map<string, FileRecord>();
+    for (const f of baseFiles) byPath.set(f.path, f);
+    for (const f of deepFiles) {
+      if (!byPath.has(f.path)) byPath.set(f.path, f);
+    }
+    return Array.from(byPath.values());
+  }, [baseFiles, deepFiles]);
 
   useEffect(() => {
     loadFiles();
@@ -137,6 +157,19 @@ export default function App() {
     return result;
   }, [tabFiles, activeFilter, duplicateSet, sortMode]);
 
+  const fileById = useMemo(() => {
+    const m = new Map<string, FileRecord>();
+    for (const f of files) m.set(f.id, f);
+    return m;
+  }, [files]);
+
+  useEffect(() => {
+    // Keep the overlay up until changes stop for a moment.
+    setIsFiltering(true);
+    const t = setTimeout(() => setIsFiltering(false), 800);
+    return () => clearTimeout(t);
+  }, [activeTab, activeFilter, sortMode, tabFiles.length]);
+
   const spaceStats: SpaceStats | null = useMemo(() => {
     if (files.length === 0) return null;
     let totalMB = 0;
@@ -210,25 +243,96 @@ export default function App() {
     };
   }, [files, activeTab, duplicateSet]);
 
-  const handleFileDrop = useCallback(async (file: FileRecord, cardRect: DOMRect | null) => {
-    const animType = file.isScheduled ? 'incinerate' : 'schedule';
-    setBurnAnim({ file, type: animType, startRect: cardRect });
+  const firepitStats: SpaceStats | null = useMemo(() => {
+    const scheduled = files.filter((f) => f.isScheduled);
+    if (scheduled.length === 0) return null;
 
+    let totalMB = 0;
+    let videosMB = 0;
+    let photosMB = 0;
+    let appsMB = 0;
+    let docsMB = 0;
+    let archivesMB = 0;
+    let audioMB = 0;
+
+    const imageExts = new Set(FILTER_EXTENSIONS.images);
+    const videoExts = new Set(FILTER_EXTENSIONS.videos);
+    const audioExts = new Set(FILTER_EXTENSIONS.audio);
+    const docsExts = new Set(FILTER_EXTENSIONS.documents);
+    const archivesExts = new Set(FILTER_EXTENSIONS.archives);
+    const appsExts = new Set(FILTER_EXTENSIONS.apps);
+
+    for (const f of scheduled) {
+      totalMB += f.sizeMB;
+      const ext = f.extension.toLowerCase();
+      if (videoExts.has(ext)) videosMB += f.sizeMB;
+      else if (imageExts.has(ext)) photosMB += f.sizeMB;
+      else if (appsExts.has(ext)) appsMB += f.sizeMB;
+      else if (docsExts.has(ext)) docsMB += f.sizeMB;
+      else if (archivesExts.has(ext)) archivesMB += f.sizeMB;
+      else if (audioExts.has(ext)) audioMB += f.sizeMB;
+    }
+
+    const totalGB = totalMB / 1024;
+    return {
+      totalGB,
+      fileCount: scheduled.length,
+      videosGB: videosMB / 1024,
+      photosGB: photosMB / 1024,
+      appsGB: appsMB / 1024,
+      docsGB: docsMB / 1024,
+      archivesGB: archivesMB / 1024,
+      audioGB: audioMB / 1024,
+      otherGB: totalGB - (videosMB + photosMB + appsMB + docsMB + archivesMB + audioMB) / 1024,
+      installersGB: 0,
+      installersCount: 0,
+      duplicatesCount: 0,
+      neverOpenedCount: 0,
+      scheduledCount: scheduled.length,
+      highScoreCount: 0,
+    };
+  }, [files]);
+
+  const handleFilesDrop = useCallback(async (idsToDrop: string[], cardRect: DOMRect) => {
+    const groupFiles = idsToDrop
+      .map((id) => fileById.get(id))
+      .filter((f): f is FileRecord => !!f);
+
+    if (groupFiles.length === 0) return;
+
+    const primaryFile = groupFiles[0];
+    const animType = primaryFile.isScheduled ? 'incinerate' : 'schedule';
+    setBurnAnim({ file: primaryFile, type: animType, startRect: cardRect });
+
+    const scheduledPathsSet = new Set<string>();
     try {
-      if (file.isScheduled) {
-        await window.incinerator.permanentDelete(file.path);
-      } else {
-        await window.incinerator.scheduleDelete(file.path);
-      }
+      await Promise.all(
+        groupFiles.map(async (f) => {
+          if (f.isScheduled) {
+            await window.incinerator.permanentDelete(f.path);
+          } else {
+            scheduledPathsSet.add(f.path);
+            await window.incinerator.scheduleDelete(f.path);
+          }
+        })
+      );
     } catch (err) {
       console.error('Delete operation failed:', err);
     }
+
+    if (scheduledPathsSet.size > 0) {
+      setDeepFiles((prev) => prev.filter((f) => !scheduledPathsSet.has(f.path)));
+    }
+
+    // Clear selection after group action.
+    setSelectedIds(new Set());
+    setSelectMode(false);
 
     setTimeout(() => {
       setBurnAnim(null);
       loadFiles();
     }, animType === 'incinerate' ? 500 : 700);
-  }, [loadFiles]);
+  }, [fileById, loadFiles]);
 
   const handleUnschedule = useCallback(async (file: FileRecord) => {
     try {
@@ -238,6 +342,73 @@ export default function App() {
       console.error('Failed to unschedule file:', err);
     }
   }, [loadFiles]);
+
+  useEffect(() => {
+    // Listen for deep scan batches from main process
+    window.incinerator.onDeepScanBatch?.((payload: any) => {
+      if (!payload || !payload.scanId) return;
+      if (payload.progress) setDeepScanProgress(payload.progress);
+      if (payload.done) {
+        setDeepScanRunning(false);
+        return;
+      }
+      if (payload.batch && Array.isArray(payload.batch)) {
+        setDeepFiles((prev) => {
+          const byPath = new Map<string, FileRecord>();
+          for (const f of prev) byPath.set(f.path, f);
+          for (const f of payload.batch as FileRecord[]) {
+            if (!byPath.has(f.path)) byPath.set(f.path, f);
+          }
+          return Array.from(byPath.values());
+        });
+      }
+    });
+  }, []);
+
+  const ensureDefaultDeepRoots = useCallback(() => {
+    if (deepScanRoots && deepScanRoots.length > 0) return deepScanRoots;
+    const userProfile = (window as any).process?.env?.USERPROFILE as string | undefined;
+    // Fallback: mimic the quick scan set via common folder names under user profile.
+    if (userProfile) {
+      return ['Desktop', 'Downloads', 'Documents', 'Pictures', 'Videos'].map((d) => `${userProfile}\\\\${d}`);
+    }
+    return [];
+  }, [deepScanRoots]);
+
+  const startDeepScan = useCallback(async () => {
+    const roots = ensureDefaultDeepRoots();
+    if (roots.length === 0) return;
+    setDeepScanRunning(true);
+    setDeepScanProgress({ scannedFiles: 0, matchedFiles: 0 });
+    const res = await window.incinerator.deepScanStart({ roots, minSizeMB: deepScanMinSizeMB });
+    setDeepScanId(res?.scanId ?? null);
+    setDeepScanOpen(false);
+  }, [deepScanMinSizeMB, ensureDefaultDeepRoots]);
+
+  const cancelDeepScan = useCallback(async () => {
+    if (!deepScanId) return;
+    await window.incinerator.deepScanCancel(deepScanId);
+    setDeepScanRunning(false);
+  }, [deepScanId]);
+
+  const revealInFolder = useCallback(async (file: FileRecord) => {
+    try {
+      await window.incinerator.revealInFolder(file.path);
+    } catch (err) {
+      console.error('Failed to reveal file in folder:', err);
+    }
+  }, []);
+
+  const pickMoreFolders = useCallback(async () => {
+    const picked: string[] = await window.incinerator.pickScanFolders();
+    if (!picked || picked.length === 0) return;
+    setDeepScanRoots((prev) => {
+      const base = prev && prev.length ? prev : ensureDefaultDeepRoots();
+      const set = new Set<string>(base);
+      for (const p of picked) set.add(p);
+      return Array.from(set);
+    });
+  }, [ensureDefaultDeepRoots]);
 
   const handleBurnComplete = useCallback(() => {
     setBurnAnim(null);
@@ -270,6 +441,103 @@ export default function App() {
         onSortChange={setSortMode}
         isScheduledTab={activeTab === 'scheduled'}
       />
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          flexShrink: 0,
+          borderBottom: '1px solid var(--border-subtle)',
+          background: 'var(--bg-base)',
+          padding: '6px 16px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {!selectMode ? (
+            <button
+              onClick={() => {
+                setSelectedIds(new Set());
+                setSelectMode(true);
+              }}
+              style={{
+                border: '1px solid var(--border-subtle)',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                fontFamily: "'Chakra Petch', sans-serif",
+                fontSize: 10,
+                textTransform: 'uppercase',
+                letterSpacing: '0.08em',
+                borderRadius: 10,
+                padding: '6px 10px',
+                cursor: 'pointer',
+              }}
+            >
+              Select cards
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  setSelectedIds(new Set(displayedFiles.map((f) => f.id)));
+                }}
+                style={{
+                  border: '1px solid var(--border-subtle)',
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  fontFamily: "'Chakra Petch', sans-serif",
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  borderRadius: 10,
+                  padding: '6px 10px',
+                  cursor: 'pointer',
+                }}
+              >
+                Select all
+              </button>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                style={{
+                  border: '1px solid var(--border-subtle)',
+                  background: 'transparent',
+                  color: 'var(--text-secondary)',
+                  fontFamily: "'Chakra Petch', sans-serif",
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  borderRadius: 10,
+                  padding: '6px 10px',
+                  cursor: 'pointer',
+                  opacity: 0.8,
+                }}
+              >
+                Clear
+              </button>
+              <button
+                onClick={() => setSelectMode(false)}
+                style={{
+                  border: '1px solid var(--accent-fire)',
+                  background: 'var(--accent-fire)',
+                  color: '#000',
+                  fontFamily: "'Chakra Petch', sans-serif",
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  borderRadius: 10,
+                  padding: '6px 10px',
+                  cursor: 'pointer',
+                }}
+              >
+                Done selecting
+              </button>
+            </>
+          )}
+        </div>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'var(--text-secondary)', opacity: 0.85 }}>
+          {selectMode ? `${selectedIds.size} selected` : ''}
+        </div>
+      </div>
       <DiskBar />
       <Layout>
         <div
@@ -283,17 +551,44 @@ export default function App() {
           }}
         >
           <RoastPanel
-            stats={spaceStats}
+            stats={activeTab === 'scheduled' ? firepitStats : spaceStats}
             roastSeed={roastSeed}
             onRoastAgain={handleRoastAgain}
+            variant={activeTab === 'scheduled' ? 'firepit' : 'quickScan'}
+            deepScanUI={activeTab === 'scheduled' ? undefined : {
+              open: deepScanOpen,
+              setOpen: setDeepScanOpen,
+              running: deepScanRunning,
+              progress: deepScanProgress,
+              roots: deepScanRoots ?? ensureDefaultDeepRoots(),
+              setRoots: setDeepScanRoots,
+              minSizeMB: deepScanMinSizeMB,
+              setMinSizeMB: setDeepScanMinSizeMB,
+              pickFolders: pickMoreFolders,
+              start: startDeepScan,
+              stop: cancelDeepScan,
+            }}
           />
           <CardGrid
             files={displayedFiles}
             loading={loading}
-            onFileDrop={handleFileDrop}
+            filtering={isFiltering}
+            onFileDrop={handleFilesDrop}
             onUnschedule={handleUnschedule}
+            onRevealInFolder={revealInFolder}
             duplicateIds={duplicateSet}
             activeTab={activeTab}
+            selectionMode={selectMode}
+            selectedIds={selectedIds}
+            onToggleSelect={(file) => {
+              if (!selectMode) return;
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                if (next.has(file.id)) next.delete(file.id);
+                else next.add(file.id);
+                return next;
+              });
+            }}
           />
         </div>
         <Firepit

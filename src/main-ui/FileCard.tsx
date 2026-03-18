@@ -6,8 +6,12 @@ import { FileRecord } from '../shared/types';
 interface FileCardProps {
   file: FileRecord;
   index: number;
-  onDragToFirepit: (file: FileRecord, rect: DOMRect) => void;
+  onDragToFirepit: (idsToDrop: string[], rect: DOMRect) => void;
   onUnschedule?: (file: FileRecord) => void;
+  onRevealInFolder?: (file: FileRecord) => void;
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (file: FileRecord) => void;
   isDuplicate?: boolean;
 }
 
@@ -18,6 +22,7 @@ function scoreToColor(score: number): string {
 }
 
 function formatSize(mb: number): string {
+  if (!Number.isFinite(mb) || mb < 0) return '0 KB';
   if (mb < 0.01) return `${Math.round(mb * 1024)} KB`;
   if (mb < 1) return `${mb.toFixed(1)} MB`;
   if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
@@ -64,32 +69,50 @@ function getParentFolder(filePath: string): string {
   return '';
 }
 
-export default function FileCard({ file, index, onDragToFirepit, onUnschedule, isDuplicate }: FileCardProps) {
+export default function FileCard({
+  file,
+  index,
+  onDragToFirepit,
+  onUnschedule,
+  onRevealInFolder,
+  selectionMode = false,
+  selectedIds,
+  onToggleSelect,
+  isDuplicate,
+}: FileCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [dragGhost, setDragGhost] = useState<null | { x: number; y: number; w: number; h: number }>(null);
+  const isSelected = !!selectedIds?.has(file.id);
 
   const cardStyle: React.CSSProperties = useMemo(() => ({
     position: 'relative',
     width: 170,
     background: file.isScheduled ? 'var(--scheduled-tint)' : 'var(--bg-surface)',
-    border: `2px solid ${file.isScheduled ? '#3d2a0a' : 'var(--border-subtle)'}`,
+    border: isSelected ? '2px solid var(--accent-fire)' : `2px solid ${file.isScheduled ? '#3d2a0a' : 'var(--border-subtle)'}`,
     borderRadius: 12,
     padding: 0,
-    cursor: 'grab',
+    cursor: selectionMode ? 'pointer' : 'grab',
     overflow: 'hidden',
     userSelect: 'none',
     display: 'flex',
     flexDirection: 'column',
-  }), [file.isScheduled]);
+  }), [file.isScheduled, isSelected, selectionMode]);
 
   return (
     <motion.div
       ref={cardRef}
       layout
-      drag
+      drag={!selectionMode}
       dragSnapToOrigin
       whileHover={{ y: -3, boxShadow: `0 0 16px ${scoreToColor(file.deletionScore)}66` }}
       whileDrag={{ rotate: 3, scale: 1.05, zIndex: 50 }}
+      onDoubleClick={() => {
+        if (!selectionMode && !file.isScheduled) onRevealInFolder?.(file);
+      }}
+      onClick={() => {
+        if (!selectionMode) return;
+        onToggleSelect?.(file);
+      }}
       onDragStart={(_event, info) => {
         if (!cardRef.current) return;
         const rect = cardRef.current.getBoundingClientRect();
@@ -104,7 +127,11 @@ export default function FileCard({ file, index, onDragToFirepit, onUnschedule, i
           const cardRect = cardRef.current.getBoundingClientRect();
           const cardCenterX = cardRect.left + cardRect.width / 2 + info.offset.x;
           if (cardCenterX > window.innerWidth * 0.5) {
-            onDragToFirepit(file, cardRect);
+            const idsToDrop =
+              selectedIds && selectedIds.size > 0 && selectedIds.has(file.id)
+                ? [file.id, ...Array.from(selectedIds).filter((id) => id !== file.id)]
+                : [file.id];
+            onDragToFirepit(idsToDrop, cardRect);
           }
         }
       }}
