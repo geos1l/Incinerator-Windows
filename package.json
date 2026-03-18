@@ -1,6 +1,6 @@
 {
   "name": "incinerator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Burn the clutter. A smart file cleanup tool for Windows.",
   "main": "dist/main.js",
   "author": "Incinerator Team",
