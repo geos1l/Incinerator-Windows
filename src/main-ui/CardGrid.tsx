@@ -6,10 +6,15 @@ import { FileRecord } from '../shared/types';
 interface CardGridProps {
   files: FileRecord[];
   loading: boolean;
-  onFileDrop: (file: FileRecord, cardRect: DOMRect) => void;
+  filtering?: boolean;
+  onFileDrop: (idsToDrop: string[], cardRect: DOMRect) => void;
   onUnschedule?: (file: FileRecord) => void;
+  onRevealInFolder?: (file: FileRecord) => void;
   duplicateIds?: Set<string>;
   activeTab: 'all' | 'scheduled';
+  selectionMode?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (file: FileRecord) => void;
 }
 
 function SkeletonCard() {
@@ -34,7 +39,19 @@ function SkeletonCard() {
   );
 }
 
-export default function CardGrid({ files, loading, onFileDrop, onUnschedule, duplicateIds, activeTab }: CardGridProps) {
+function CardGridImpl({
+  files,
+  loading,
+  filtering = false,
+  onFileDrop,
+  onUnschedule,
+  onRevealInFolder,
+  duplicateIds,
+  activeTab,
+  selectionMode = false,
+  selectedIds,
+  onToggleSelect,
+}: CardGridProps) {
   const gridViewportStyle: React.CSSProperties = {
     flex: 1,
     minHeight: 0,
@@ -96,8 +113,39 @@ export default function CardGrid({ files, loading, onFileDrop, onUnschedule, dup
     );
   }
 
-    return (
-    <div style={gridViewportStyle}>
+  return (
+    <div style={{ ...gridViewportStyle, position: 'relative' }}>
+      {filtering && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(14,14,14,0.55)',
+            backdropFilter: 'blur(2px)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            paddingTop: 24,
+            zIndex: 5,
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10,
+              color: 'var(--text-secondary)',
+              opacity: 0.9,
+              border: '1px solid var(--border-subtle)',
+              background: 'var(--bg-elevated)',
+              borderRadius: 10,
+              padding: '6px 10px',
+            }}
+          >
+            Filtering…
+          </div>
+        </div>
+      )}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
         <AnimatePresence mode="popLayout">
           {files.map((file, index) => (
@@ -107,6 +155,10 @@ export default function CardGrid({ files, loading, onFileDrop, onUnschedule, dup
               index={index}
               onDragToFirepit={onFileDrop}
               onUnschedule={onUnschedule}
+              onRevealInFolder={onRevealInFolder}
+              selectionMode={selectionMode}
+              selectedIds={selectedIds}
+              onToggleSelect={onToggleSelect}
               isDuplicate={duplicateIds?.has(file.id)}
             />
           ))}
@@ -115,3 +167,5 @@ export default function CardGrid({ files, loading, onFileDrop, onUnschedule, dup
     </div>
   );
 }
+
+export default React.memo(CardGridImpl);

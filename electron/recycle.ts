@@ -90,7 +90,9 @@ else { $result | ConvertTo-Json -Compress }
       const ext = item.Name.includes('.')
         ? item.Name.substring(item.Name.lastIndexOf('.')).toLowerCase()
         : '';
-      const sizeMB = (item.Size || 0) / (1024 * 1024);
+      const sizeBytesRaw = Number((item as any).Size);
+      const sizeBytes = Number.isFinite(sizeBytesRaw) ? Math.max(0, sizeBytesRaw) : 0;
+      const sizeMB = sizeBytes / (1024 * 1024);
       const deletedDate = item.DateDeleted ? new Date(item.DateDeleted).getTime() : Date.now();
       const daysUntilAutoDelete = Math.max(0, 30 - Math.floor((Date.now() - deletedDate) / (1000 * 60 * 60 * 24)));
 

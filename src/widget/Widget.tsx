@@ -15,6 +15,11 @@ declare global {
       scheduleDelete: (path: string) => Promise<any>;
       restoreFile: (fileName: string) => Promise<any>;
       getDiskUsage: () => Promise<{ usedGB: number; freeGB: number; totalGB: number; drive: string }>;
+      pickScanFolders: () => Promise<string[]>;
+      deepScanStart: (options: { roots: string[]; minSizeMB?: number | null }) => Promise<{ scanId: string }>;
+      deepScanCancel: (scanId: string) => Promise<{ success: boolean }>;
+      onDeepScanBatch: (cb: (payload: any) => void) => void;
+      revealInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>;
       widgetResize: (expanded: boolean) => void;
       widgetStartDrag: () => void;
       widgetStopDrag: () => Promise<boolean>;

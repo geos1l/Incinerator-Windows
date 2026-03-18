@@ -1,9 +1,9 @@
-import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { IPC } from '../src/shared/ipc-events';
 import { moveToRecycleBin, permanentDelete, restoreFromRecycleBin, getRecycleBinFiles, getRecycleBinSizeMB } from './recycle';
-import { scanFiles } from './file-scanner';
+import { scanFiles, deepScanFiles } from './file-scanner';
 import { getFireState } from '../src/shared/ranking';
 import { initTelemetry, trackFileAction, shutdownTelemetry } from './telemetry';
 import { autoUpdater } from 'electron-updater';
@@ -17,6 +17,8 @@ let widgetWindow: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+let deepScanController: AbortController | null = null;
+let deepScanId: string | null = null;
 
 const isDev = !app.isPackaged;
 const preloadPath = path.join(__dirname, 'preload.js');
@@ -52,12 +54,25 @@ function createWidgetWindow() {
   const config = loadConfig();
   const defaultX = screenW - WIDGET_IDLE_SIZE - 24;
   const defaultY = screenH - WIDGET_IDLE_SIZE - 24;
+  const displays = screen.getAllDisplays();
+  const isOnSomeScreen = (x: number, y: number) => {
+    return displays.some((d) => {
+      const a = d.workArea;
+      return x >= a.x && x <= a.x + a.width - 10 && y >= a.y && y <= a.y + a.height - 10;
+    });
+  };
+  const startX = Number.isFinite(config.widgetX) && Number.isFinite(config.widgetY) && isOnSomeScreen(config.widgetX, config.widgetY)
+    ? config.widgetX
+    : defaultX;
+  const startY = Number.isFinite(config.widgetX) && Number.isFinite(config.widgetY) && isOnSomeScreen(config.widgetX, config.widgetY)
+    ? config.widgetY
+    : defaultY;
 
   widgetWindow = new BrowserWindow({
     width: WIDGET_IDLE_SIZE,
     height: WIDGET_IDLE_SIZE,
-    x: config.widgetX ?? defaultX,
-    y: config.widgetY ?? defaultY,
+    x: startX,
+    y: startY,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -178,6 +193,17 @@ app.whenReady().then(() => {
         }
       },
     },
+    {
+      label: 'Reset widget position',
+      click: () => {
+        if (!widgetWindow || widgetWindow.isDestroyed()) return;
+        const { width: w, height: h } = screen.getPrimaryDisplay().workAreaSize;
+        const x = w - WIDGET_IDLE_SIZE - 24;
+        const y = h - WIDGET_IDLE_SIZE - 24;
+        widgetWindow.setPosition(x, y);
+        saveConfig({ widgetX: x, widgetY: y });
+      },
+    },
     { type: 'separator' },
     {
       label: 'Quit',
@@ -228,6 +254,90 @@ app.whenReady().then(() => {
     const scanned = await scanFiles();
     const recycled = getRecycleBinFiles();
     return [...scanned, ...recycled];
+  });
+
+  ipcMain.handle(IPC.PICK_SCAN_FOLDERS, async () => {
+    try {
+      const sysDrive = process.env.SystemDrive || 'C:';
+      const defaultPath = `${sysDrive}\\`;
+      const result = await dialog.showOpenDialog({
+        title: 'Choose folders to scan',
+        properties: ['openDirectory', 'multiSelections'],
+        defaultPath,
+      });
+      if (result.canceled) return [];
+      return result.filePaths || [];
+    } catch {
+      return [];
+    }
+  });
+
+  ipcMain.handle(IPC.DEEP_SCAN_START, async (_event, options: { roots: string[]; minSizeMB?: number | null }) => {
+    // Cancel any existing scan
+    if (deepScanController) {
+      deepScanController.abort();
+      deepScanController = null;
+      deepScanId = null;
+    }
+
+    deepScanController = new AbortController();
+    deepScanId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const scanId = deepScanId;
+
+    // Run async without blocking the invoke caller
+    setTimeout(() => {
+      const controller = deepScanController;
+      if (!controller || deepScanId !== scanId) return;
+
+      deepScanFiles({
+        roots: options.roots || [],
+        minSizeMB: options.minSizeMB ?? null,
+        signal: controller.signal,
+        onBatch: (batch) => {
+          widgetWindow?.webContents.send(IPC.DEEP_SCAN_BATCH, { scanId, batch });
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send(IPC.DEEP_SCAN_BATCH, { scanId, batch });
+          }
+        },
+        onProgress: (info) => {
+          widgetWindow?.webContents.send(IPC.DEEP_SCAN_BATCH, { scanId, progress: info });
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send(IPC.DEEP_SCAN_BATCH, { scanId, progress: info });
+          }
+        },
+      }).then((final) => {
+        widgetWindow?.webContents.send(IPC.DEEP_SCAN_BATCH, { scanId, done: true, progress: final });
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IPC.DEEP_SCAN_BATCH, { scanId, done: true, progress: final });
+        }
+      }).catch(() => {
+        widgetWindow?.webContents.send(IPC.DEEP_SCAN_BATCH, { scanId, done: true });
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IPC.DEEP_SCAN_BATCH, { scanId, done: true });
+        }
+      });
+    }, 0);
+
+    return { scanId };
+  });
+
+  ipcMain.handle(IPC.DEEP_SCAN_CANCEL, async (_event, scanId: string) => {
+    if (deepScanController && deepScanId === scanId) {
+      deepScanController.abort();
+      deepScanController = null;
+      deepScanId = null;
+      return { success: true };
+    }
+    return { success: false };
+  });
+
+  ipcMain.handle(IPC.REVEAL_IN_FOLDER, async (_event, filePath: string) => {
+    try {
+      shell.showItemInFolder(filePath);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
   });
 
   ipcMain.handle(IPC.PERMANENT_DELETE, (_event, filePath: string) => {
