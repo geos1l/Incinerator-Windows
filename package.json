@@ -21,7 +21,7 @@
     "appId": "com.incinerator.app",
     "productName": "Incinerator",
     "directories": {
-      "output": "installer-output-v2"
+      "output": "installer-output-v3"
     },
     "files": [
       "dist/**/*"
