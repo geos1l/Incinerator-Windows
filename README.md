@@ -2,7 +2,7 @@
 
 Incinerate the clutter. **Incinerator** is a desktop app that makes cleanup feel like feeding a firepit. This is the windows version. If you're a mac user check out this repo https://github.com/muhibwqr/incinerator
 
-<video src="demo-video.mp4" width="320" height="240" controls></video>
+https://github.com/geos1l/Cursor-Freeform-/raw/main/demo-video.mp4
 
 ## Install
 
